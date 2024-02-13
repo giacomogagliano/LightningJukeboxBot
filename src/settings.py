@@ -5,6 +5,7 @@ import os
 import random
 import string
 from time import time
+from spotifyhelper import makeSpotifyRedirectUri
 
 
 
@@ -51,7 +52,7 @@ def init():
 
     # set secret token for telegram
     secret_token = "".join(random.sample(string.ascii_letters,12))
-    spotify_redirect_uri=f'https://{domain}/spotify' # this must literaly match the config in spotify
+    spotify_redirect_uri=makeSpotifyRedirectUri(domain) # this must literaly match the config in spotify
     max_connections = 5
 
     # webserver port

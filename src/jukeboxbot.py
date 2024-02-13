@@ -38,8 +38,8 @@ if __version_info__ < (20, 0, 0, "alpha", 1):
         f"This script is not compatible with your current PTB version {TG_VER}. "
     )
 
-import spotipy
-from spotipy.oauth2 import SpotifyOAuth
+# import spotipy
+# from spotipy.oauth2 import SpotifyOAuth
 
 
 from telegram import (
@@ -71,6 +71,30 @@ import settings
 import jukeboxtexts
 import invoicehelper
 from invoicehelper import Invoice
+
+# Things added by @giacomo
+
+from MusicPlatformHandler import MusicPlatformHandler
+from Spotify import Spotify
+
+spotify = Spotify()
+musichandler = MusicPlatformHandler(spotify)
+spotifyFactory = musichandler.apiFactory
+SpotifyOauthError = musichandler.OauthError
+SpotifyException = musichandler.Exception
+makeConnectMessage = musichandler.makeConnectMessage
+validateSearch = musichandler.validateSearch
+spotifyOauthErrorText = musichandler.oauthErrorText
+spotifyException = musichandler.exception
+spotifyExceptionWarning = musichandler.exceptionWarning
+callback_spotify_unhandled_exception = musichandler.callback_unhandled_exception
+callback_spotify_info= musichandler.callback_info
+callback_spotify_nocode = musichandler.callback_nocode
+make_callback_spotify_infoText = musichandler.make_callback_infoText
+callback_spotify_connected = musichandler.callback_connected
+validateTrackId = musichandler.validateTrackId
+addSpotifyPrefix = musichandler.addPrefix
+sp_is_none = musichandler.mp_is_none
 
 jukeboxtexts.init()
 settings.init()
@@ -254,20 +278,7 @@ async def connect(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await context.bot.send_message(
             chat_id=update.effective_user.id,
             parse_mode='HTML',
-            text=f"""
-To connect this bot to your spotify account, you have to create an app in the developer portal of Spotify <A href="https://developer.spotify.com/dashboard/applications">here</a>.
-
-1. Click on the 'Create an app' button and give the bot a random name and description. Then click 'Create".
-
-2. Record the 'Client ID' and 'Client Secret'. 
-
-3. Click 'Edit Settings' and add EXACTLY this url <pre>{settings.spotify_redirect_uri}</pre> under 'Redirect URIs'. Do not forget to click 'Add' and 'Save'
-
-4. Use the /setclientid and /setclientsecret commands to configure the 'Client ID' and 'Client Secret'. 
-
-5. Give the '/couple' command in the group that you want to connect to your account. That will redirect you to an authorisation page.
- 
-""")
+            text=makeConnectMessage(settings.spotify_redirect_uri))
         
         # check that client_id is not None
         if sps.client_id is None:
@@ -413,7 +424,7 @@ async def queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # create spotify instance
     try:
-        sp = spotipy.Spotify(auth_manager=auth_manager)
+        sp = spotifyFactory(auth_manager=auth_manager)
     except:
         message = await context.bot.send_message(chat_id=update.effective_chat.id,text="Failed to connect to music player")    
         context.job_queue.run_once(delete_message, settings.delete_message_timeout_medium, data={'message':message})
@@ -585,7 +596,7 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # create spotify instance
-    sp = spotipy.Spotify(auth_manager=auth_manager)
+    sp = spotifyFactory(auth_manager=auth_manager)
         
     text = "Track history:\n"
     history = await spotifyhelper.get_history(update.effective_chat.id,20)
@@ -684,7 +695,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # create spotify instance
-    sp = spotipy.Spotify(auth_manager=auth_manager)
+    sp = spotifyFactory(auth_manager=auth_manager)
     
     # validate the search string
     searchstr = update.message.text.split(' ',1)
@@ -696,7 +707,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # check if the search string is a spotify URL
-    match = re.search('https://open.spotify.com/playlist/([A-Za-z0-9]+).*$',searchstr)
+    match = validateSearch(searchstr=searchstr)
     if (match):
         playlistid = match.groups()[0]
         result = sp.playlist(playlistid,fields=['name'])
@@ -716,24 +727,24 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     while numtries > 0:
         try:
             result = sp.search(searchstr)
-        except spotipy.oauth2.SpotifyOauthError:
+        except SpotifyOauthError:
             # spotify not properly authenticated
-            logging.info("Spotify Oauth error")
+            logging.info(spotifyOauthErrorText)
             message = await context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text="Music player not available, search aborted.")
             return
             
-        except spotipy.exceptions.SpotifyException:
+        except SpotifyException:
             numtries -= 1
             if numtries == 0:
                 # spotify still triggers an exception
-                logging.error("Spotify returned and exception, not returning search result")
+                logging.error(spotifyException)
                 message = await context.bot.send_message(
                     chat_id=update.effective_chat.id,
                     text="Music player unavailable, search aborted.")
                 return
-            logging.warning("Spotify returned and exception, retrying")
+            logging.warning(spotifyExceptionWarning)
             continue
         
         break
@@ -877,7 +888,7 @@ async def callback_paid_invoice(invoice: Invoice):
 
 
     # add to the queue and inform others
-    sp = spotipy.Spotify(auth_manager=auth_manager)
+    sp = spotifyFactory(auth_manager=auth_manager)
     
     spotifyhelper.add_to_queue(sp, invoice.spotify_uri_list)
     try:
@@ -1013,7 +1024,7 @@ async def callback_spotify(context: ContextTypes.DEFAULT_TYPE) -> None:
 
             currenttrack = None
             try:
-                sp = spotipy.Spotify(auth_manager=auth_manager)
+                sp = spotifyFactory(auth_manager=auth_manager)
                 currenttrack = sp.current_user_playing_track()
             except:
                 #logging.info("Exception while querying the current playing track at spotify")
@@ -1060,13 +1071,12 @@ async def callback_spotify(context: ContextTypes.DEFAULT_TYPE) -> None:
                 except:
                     logging.error("Exception when sending message to group")
     except:
-       logging.error("Unhandled exception in callback_spotify")             
+        logging.error(callback_spotify_unhandled_exception)             
     finally:
         if interval < 30 or interval > 300:
             interval = 30
         logging.info(f"Next run in {interval} seconds")
         context.job_queue.run_once(callback_spotify, interval, job_kwargs = {'misfire_grace_time':None})
-                                                               
         
 #callback for button presses
 async def callback_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1128,7 +1138,7 @@ async def callback_button(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     # create spotify instance
-    sp = spotipy.Spotify(auth_manager=auth_manager)
+    sp = spotifyFactory(auth_manager=auth_manager)
 
     # verify that player is available, otherwise it has no use to queue a track
     track = sp.current_user_playing_track()
@@ -1450,7 +1460,7 @@ async def main() -> None:
             }""", media_type="application/json")
 
         # create spotify instance
-        sp = spotipy.Spotify(auth_manager=auth_manager)
+        sp = spotifyFactory(auth_manager=auth_manager)
 
         # get the current track
         track = sp.current_user_playing_track()
@@ -1464,10 +1474,10 @@ async def main() -> None:
         This function handles the callback from spotify when authorizing request to an account
         """
 
-        logging.info("Got callback from spotify")
+        logging.info(callback_spotify_info)
 
         if 'code' not in request.query_params:
-            logging.error("no code in response from spotify")
+            logging.error(callback_spotify_nocode)
             # callback without code
             return Response()
 
@@ -1490,7 +1500,7 @@ async def main() -> None:
             logging.error("Failure during state query parameter parsing")
             return Response()
 
-        logging.info(f"Spotify callback for {chatid} {userid} with code {code}")
+        logging.info(make_callback_spotify_infoText(chatid,userid,code))
 
         try:
             auth_manager = await spotifyhelper.get_auth_manager(chatid)                               
@@ -1499,7 +1509,7 @@ async def main() -> None:
                 await userhelper.set_group_owner(chatid, userid)
                 await application.bot.send_message(
                     chat_id=userid,
-                    text=f"Spotify connected to the chat. All revenues of requested tracks are coming your way. Execute the /decouple command in the group to remove the authorisation.")
+                    text=callback_spotify_connected)
         except Exception as e:            
             logging.error(e)
             logging.error("Failure during auth_manager instantiation")
@@ -1662,7 +1672,7 @@ async def main() -> None:
             return JSONResponse({"status":400,"message":"Incomplete request auth manager is None"})
             
         # create spotify instance
-        sp = spotipy.Spotify(auth_manager=auth_manager)
+        sp = spotifyFactory(auth_manager=auth_manager)
         if sp is None:
             return JSONResponse({"status":400,"message":"Incomplete response sp is none"})
 
@@ -1671,12 +1681,12 @@ async def main() -> None:
         while numtries > 0:
             try:
                 result = sp.search(query)
-            except spotipy.exceptions.SpotifyException:
+            except SpotifyException:
                 numtries -= 1
                 if numtries == 0:
-                    logging.error("Spotify returned and exception, not returning search result")
+                    logging.error(spotifyException)
                     return JSONResponse({"status":400,"message":"Search currently unavailable"})
-                logging.warning("Spotify returned and exception, retrying")
+                logging.warning(spotifyExceptionWarning)
                 continue
             break
 
@@ -1690,7 +1700,7 @@ async def main() -> None:
         for item in result['tracks']['items']:            
             title = spotifyhelper.get_track_title(item)
             track_id = item['uri']
-            result = re.search("^spotify:track:([A-Z0-9a-z]+)$",track_id)
+            result = validateTrackId(track_id)
             if not result:
                 continue
 
@@ -1739,7 +1749,7 @@ async def main() -> None:
 
 
         # add spotify prefix to the track_id
-        track_id = f"spotify:track:{track_id}"
+        track_id = addSpotifyPrefix(track_id)
 
         # get spotify auth manager 
         auth_manager = await spotifyhelper.get_auth_manager(chat_id)                               
@@ -1749,10 +1759,10 @@ async def main() -> None:
 
        
         # create spotify instance
-        sp = spotipy.Spotify(auth_manager=auth_manager)
+        sp = spotifyFactory(auth_manager=auth_manager)
 
         if sp is None:
-            logging.warning("sp is None")
+            logging.warning(sp_is_none)
             return JSONResponse({"status":400,"message":"Incomplete request"})
 
 

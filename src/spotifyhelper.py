@@ -1,4 +1,5 @@
 import redis
+import re
 from redis import RedisError
 import asyncio
 import settings
@@ -8,6 +9,10 @@ from spotipy import CacheHandler
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from time import time
+
+SpotifyOauthError = spotipy.oauth2.SpotifyOauthError
+
+SpotifyException = spotipy.exceptions.SpotifyException
 
 class SpotifySettings:
     def __init__(self, tguserid):
@@ -93,6 +98,9 @@ def get_track_title(item):
     track=item['name']
 
     return f"{artist} - {track}"
+
+def spotifyFactory(auth_manager):
+    return spotipy.Spotify(auth_manager=auth_manager)
 
 async def get_price(chat_id):
     """
@@ -231,3 +239,50 @@ async def set_donation_fee(chat_id: int, fee: int) -> None:
     """
     rediskey = f"group:{chat_id}"
     settings.rds.hset(rediskey,"donation_fee",fee)    
+
+# util to create message
+def makeConnectMessage(uri):
+    return f"""
+To connect this bot to your spotify account, you have to create an app in the developer portal of Spotify <A href="https://developer.spotify.com/dashboard/applications">here</a>.
+
+1. Click on the 'Create an app' button and give the bot a random name and description. Then click 'Create".
+
+2. Record the 'Client ID' and 'Client Secret'. 
+
+3. Click 'Edit Settings' and add EXACTLY this url <pre>{uri}</pre> under 'Redirect URIs'. Do not forget to click 'Add' and 'Save'
+
+4. Use the /setclientid and /setclientsecret commands to configure the 'Client ID' and 'Client Secret'. 
+
+5. Give the '/couple' command in the group that you want to connect to your account. That will redirect you to an authorisation page.
+
+"""
+
+def validateSearch(searchstr):
+    return re.search('https://open.spotify.com/playlist/([A-Za-z0-9]+).*$',searchstr)
+
+def validateTrackId(track_id):
+    return re.search("^spotify:track:([A-Z0-9a-z]+)$",track_id)
+
+def addSpotifyPrefix(track_id):
+    return f"spotify:track:{track_id}"
+
+sp_is_none = "sp is None"
+spotifyOauthErrorText = "Spotify Oauth error"
+spotifyException = "Spotify returned and exception, not returning search result"
+spotifyExceptionWarning = "Spotify returned and exception, retrying"
+callback_spotify_unhandled_exception = "Unhandled exception in callback_spotify"
+callback_spotify_info = "Got callback from spotify"
+callback_spotify_nocode = "no code in response from spotify"
+callback_spotify_connected = f"Spotify connected to the chat. All revenues of requested tracks are coming your way. Execute the /decouple command in the group to remove the authorisation."
+
+def make_callback_spotify_infoText(chatid, userid, code):
+    return f"Spotify callback for {chatid} {userid} with code {code}"
+
+## invoicehelper.py
+def addUriListToDict(userdata,value):
+    userdata['spotify_uri_list'] = value
+    return userdata
+
+## settings.py
+def makeSpotifyRedirectUri(domain):
+    return f'https://{domain}/spotify'

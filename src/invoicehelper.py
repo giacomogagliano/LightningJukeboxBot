@@ -9,6 +9,7 @@ import logging
 import qrcode
 import os
 from time import time
+from spotifyhelper import addUriListToDict
 
 class Invoice:
     def __init__(self, payment_hash, payment_request = None):
@@ -37,12 +38,12 @@ class Invoice:
                 'userid': self.user.userid,
                 'username': self.user.username
             },
-            'spotify_uri_list': self.spotify_uri_list,
             'title': self.title,
             'chat_id': self.chat_id,
             'message_id': self.message_id
-    
         }
+        # moved outside in order to be able to change it based on the platform
+        userdata = addUriListToDict(userdata,self.spotify_uri_list)
         return json.dumps(userdata)
         
     def loadJson(self, data):
